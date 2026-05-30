@@ -1,16 +1,16 @@
-# 主工作流详细说明
+# Main Workflow Guide
 
-本文档说明跨板连接器网络验证的完整工作流程。
+This document describes the complete workflow for cross-board connector net verification.
 
-## 概述
+## Overview
 
-该工作流用于验证两块板通过连接器对接时，对应引脚的网络名是否一致。典型场景：板 A 的连接器 J1 与板 B 的连接器 J1 对接，验证两端引脚的网络名是否匹配。
+This workflow verifies net name consistency between corresponding pins of mating connectors on two boards. A typical scenario: Board A's connector J1 mates with Board B's connector J1 — verify that the net names on corresponding pins match.
 
-## 前置准备
+## Prerequisites
 
-### 1. 准备连接器引脚映射表
+### 1. Prepare the Connector Pin Mapping Table
 
-创建 `connector_pin_map.csv`，定义两板连接器的引脚对接关系：
+Create `connector_pin_map.csv` defining the pin mating relationship between the two board connectors:
 
 ```csv
 ConnectorPin,Row,Col,MatingPin,MatingRow,MatingCol
@@ -19,147 +19,147 @@ A4,A,4,L4,L,4
 ...
 ```
 
-- `ConnectorPin`：板 A 连接器的引脚编号
-- `MatingPin`：板 B 连接器对应引脚的编号
-- `Row`/`Col`：引脚的物理位置（用于可视化）
+- `ConnectorPin`: Pin number on Board A's connector
+- `MatingPin`: Corresponding pin number on Board B's connector
+- `Row`/`Col`: Physical position of the pin (used for visualization)
 
-对于同型对接连接器，配对关系通常为行对称：A↔L, B↔K, C↔J, D↔H, E↔G, F↔F。
+For mating connectors of the same type, the pairing is typically row-symmetric: A↔L, B↔K, C↔J, D↔H, E↔G, F↔F.
 
-### 2. 确认 OrCAD 环境
+### 2. Confirm OrCAD Environment
 
-- 已安装 OrCAD Capture CIS 17.2+
-- 在 Capture 中分别打开两块板的 DSN 文件
+- OrCAD Capture CIS 17.2+ installed
+- DSN files for both boards opened in Capture
 
-## 步骤 1：提取引脚-网络数据
+## Step 1: Extract Pin-Net Data
 
-在 OrCAD Capture 中，分别为两块板执行数据提取。
+Run data extraction in OrCAD Capture for each board separately.
 
-### 1.1 提取板 A 数据
-
-```
-1. 在 Capture 中打开板 A 的 DSN 文件
-2. 在 Command Window 中输入：set targetRefDes "J1"
-3. 回车执行
-4. 输入：source ./scripts/get_component_nets.tcl
-5. 回车执行
-6. 得到输出文件：board_a_J1_pin_nets.csv
-```
-
-### 1.2 提取板 B 数据
+### 1.1 Extract Board A Data
 
 ```
-1. 在 Capture 中打开板 B 的 DSN 文件
-2. 在 Command Window 中输入：set targetRefDes "J1"
-3. 回车执行
-4. 输入：source ./scripts/get_component_nets.tcl
-5. 回车执行
-6. 得到输出文件：board_b_J1_pin_nets.csv
+1. Open Board A's DSN file in Capture
+2. In the Command Window, enter: set targetRefDes "J1"
+3. Press Enter
+4. Enter: source ./scripts/get_component_nets.tcl
+5. Press Enter
+6. Output file: board_a_J1_pin_nets.csv
 ```
 
-### 1.3 输出格式
+### 1.2 Extract Board B Data
 
-两个 CSV 文件具有相同的列结构：
+```
+1. Open Board B's DSN file in Capture
+2. In the Command Window, enter: set targetRefDes "J1"
+3. Press Enter
+4. Enter: source ./scripts/get_component_nets.tcl
+5. Press Enter
+6. Output file: board_b_J1_pin_nets.csv
+```
 
-| 列 | 含义 |
-|---|---|
-| RefDes | 器件位号 |
-| PartValue | 器件值/型号 |
-| PinNumber | 引脚编号 |
-| PinName | 引脚名称 |
-| NetName | 网络名 |
-| PagePath | 层级路径 |
+### 1.3 Output Format
 
-### 注意事项
+Both CSV files share the same column structure:
 
-- `targetRefDes` 留空可导出全部器件，但大型工程耗时较长
-- 脚本会递归遍历层次化设计，自动进入子模块
-- 控制台会预览前 20 行数据，可快速验证
-- CSV 文件使用 UTF-8 BOM 编码
+| Column | Description |
+|--------|-------------|
+| RefDes | Component reference designator |
+| PartValue | Component value / model |
+| PinNumber | Pin number |
+| PinName | Pin name |
+| NetName | Net name |
+| PagePath | Hierarchy path |
 
-## 步骤 2：网络对比
+### Notes
 
-在 Windows 命令行中运行对比脚本。
+- Leave `targetRefDes` empty to export all components (slower for large designs)
+- The script recursively traverses hierarchical designs, automatically entering sub-modules
+- Console previews the first 20 rows for quick verification
+- CSV files use UTF-8 BOM encoding
 
-### 2.1 运行命令
+## Step 2: Net Comparison
+
+Run the comparison script from a Windows command line.
+
+### 2.1 Run Command
 
 ```
 py scripts/match_nets_interactive.py
 ```
 
-### 2.2 选择文件
+### 2.2 Select Files
 
-脚本弹出 GUI 对话框（无 GUI 环境自动回退命令行模式），依次选择：
+The script opens a GUI dialog (falls back to CLI mode if no GUI available). Select in order:
 
-1. 板 A 的 `pin_nets.csv`
-2. 板 B 的 `pin_nets.csv`
+1. Board A's `pin_nets.csv`
+2. Board B's `pin_nets.csv`
 3. `connector_pin_map.csv`
 
-### 2.3 输出文件
+### 2.3 Output Files
 
-| 文件 | 说明 |
-|---|---|
-| `match_report_<A>_vs_<B>.csv` | 匹配报告 CSV |
-| `match_report_<A>_vs_<B>.xlsx` | Excel 格式，MISMATCH 行黄色高亮 |
+| File | Description |
+|------|-------------|
+| `match_report_<A>_vs_<B>.csv` | Match report in CSV format |
+| `match_report_<A>_vs_<B>.xlsx` | Excel format with MISMATCH rows highlighted in yellow |
 
-### 2.4 匹配状态说明
+### 2.4 Match Status Descriptions
 
-| 状态 | 含义 | 需要关注 |
-|---|---|---|
-| OK | 两端网络名完全一致 | 否 |
-| MISMATCH | 两端网络名不同 | **是** |
-| NC | 两端均为空（未连接） | 视情况 |
-| NC_A | 仅 A 侧为空 | **是** |
-| NC_B | 仅 B 侧为空 | **是** |
-| MISSING | 引脚未在映射表中找到 | **是** |
+| Status | Meaning | Needs Attention |
+|--------|---------|----------------|
+| OK | Net names match exactly | No |
+| MISMATCH | Net names differ | **Yes** |
+| NC | Both sides empty (unconnected) | Depends |
+| NC_A | Only side A is empty | **Yes** |
+| NC_B | Only side B is empty | **Yes** |
+| MISSING | Pin not found in mapping table | **Yes** |
 
-### 2.5 注意事项
+### 2.5 Notes
 
-- 网络名比较为严格字符串匹配。命名规范差异（如 `VCC_3V3` 与 `VCC_3V3_MODULE`）视为 MISMATCH
-- 匹配基于 PinNumber + 映射表，不基于 PinName
-- 源文件仅做一次 `.bak` 备份
-- 控制台输出包含 MISMATCH 明细，可快速定位问题
+- Net name comparison is strict string matching. Naming convention differences (e.g., `VCC_3V3` vs `VCC_3V3_MODULE`) are treated as MISMATCH.
+- Matching is based on PinNumber + mapping table, not PinName.
+- Source files are backed up once as `.bak`.
+- Console output includes MISMATCH details for quick problem identification.
 
-## 步骤 3（可选）：可视化审查
+## Step 3 (Optional): Visual Review
 
-### 3.1 专用可视化（固定布局）
+### 3.1 Specific Visualization (Fixed Layout)
 
 ```
 py scripts/generate_visualization.py
 ```
 
-适用于 Molex 209311-1115（688 引脚）等特定连接器。
+For specific connectors like the Molex 209311-1115 (688-pin).
 
-### 3.2 通用可视化（任意连接器）
+### 3.2 Universal Visualization (Any Connector)
 
 ```
 py scripts/generate_universal_viz.py
 ```
 
-选择匹配报告 CSV 和引脚映射 CSV，支持上下/左右布局方向选择。
+Select the match report CSV and pin map CSV. Supports top-bottom / left-right layout direction selection.
 
-### 3.3 可视化功能
+### 3.3 Visualization Features
 
-- 鼠标悬停引脚显示详情
-- 点击引脚高亮对端
-- 颜色编码：绿=OK，红=MISMATCH，灰=NC，蓝=MISSING
-- 顶部状态徽章栏显示各类别统计
-- 单个自包含 HTML 文件，无需服务器
+- Hover over pin to show details
+- Click pin to highlight mating pin
+- Color coding: green=OK, red=MISMATCH, gray=NC, blue=MISSING
+- Top status badge bar showing category counts
+- Single self-contained HTML file, no server required
 
-## 典型问题排查
+## Troubleshooting
 
-### MISMATCH 数量过多
+### Too Many MISMATCH Results
 
-1. 检查命名规范差异（如模块前缀/后缀不同）
-2. 检查引脚映射表是否正确
-3. 确认两板使用的连接器型号一致
+1. Check for naming convention differences (e.g., module prefix/suffix differences)
+2. Verify the pin mapping table is correct
+3. Confirm both boards use the same connector model
 
-### MISSING 引脚
+### MISSING Pins
 
-1. 检查引脚映射表是否覆盖所有引脚
-2. 确认 `targetRefDes` 是否指定了正确的连接器位号
+1. Check if the pin mapping table covers all pins
+2. Confirm `targetRefDes` specifies the correct connector reference designator
 
-### 网络名为空
+### Empty Net Names
 
-1. 确认引脚在原理图中确实连接了网络
-2. 检查层次化设计中的跨页连接
-3. 确认引脚不是 NC（No Connect）引脚
+1. Confirm the pin is actually connected to a net in the schematic
+2. Check cross-page connections in hierarchical designs
+3. Confirm the pin is not an NC (No Connect) pin

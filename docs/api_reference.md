@@ -1,83 +1,83 @@
-# OrCAD Capture CIS 17.2 TCL Dbo API 参考
+# OrCAD Capture CIS 17.2 TCL Dbo API Reference
 
-本文档提炼自实际调试经验，覆盖 OrCAD Capture CIS 17.2 中常用的 Dbo TCL API 调用方式。
+This document is distilled from hands-on debugging experience and covers commonly used Dbo TCL API calling patterns in OrCAD Capture CIS 17.2.
 
-## 入口对象
+## Entry Objects
 
-### 获取当前工程（Design 模式）
+### Get Current Design (Design Mode)
 
 ```tcl
 set lDesign [GetActivePMDesign]
 ```
 
-返回 `DboDesign` 对象。必须在 DSN 工程打开状态下使用。
+Returns a `DboDesign` object. Must be called with a DSN design open.
 
-### 获取当前库（Library Editor 模式）
+### Get Current Library (Library Editor Mode)
 
 ```tcl
 set theLib [GetActivePMLastLibrary]
 ```
 
-返回 `DboLib` 对象。必须在 Library Editor 窗口中使用。
+Returns a `DboLib` object. Must be called in the Library Editor window.
 
-**注意：** `GetActivePMDesign` 和 `GetActiveLib` 在 Library Editor 下均返回 NULL。
+**Note:** `GetActivePMDesign` and `GetActiveLib` both return NULL in Library Editor mode.
 
-### 状态对象
+### State Object
 
 ```tcl
 set lStatus [DboState]
 ```
 
-几乎所有 Dbo API 调用都需要 `DboState` 作为参数。必须在使用其他 API 前创建。
+Nearly all Dbo API calls require a `DboState` object as a parameter. Create it before using any other API.
 
 ---
 
-## 字符串系统（三步模式）
+## String System (Three-Step Pattern)
 
-Cadence Dbo API 的字符串获取遵循统一的三步模式：
+Cadence Dbo API string retrieval follows a consistent three-step pattern:
 
 ```tcl
-; 1. 创建 CString 容器
+; 1. Create a CString container
 set cstr [DboTclHelper_sMakeCString]
 
-; 2. API 将值填入 CString
+; 2. API fills the CString
 $obj GetName $cstr
 
-; 3. 转为 Tcl 字符串
+; 3. Convert to Tcl string
 set str [DboTclHelper_sGetConstCharPtr $cstr]
 ```
 
-**适用范围：** `GetName`、`GetPinName`、`GetPinNumber`、`GetNetName`、`GetReferenceDesignator`、`GetPartValue`、`GetSchematicName` 等所有返回字符串的 API。
+**Applies to:** `GetName`, `GetPinName`, `GetPinNumber`, `GetNetName`, `GetReferenceDesignator`, `GetPartValue`, `GetSchematicName`, and all other string-returning APIs.
 
-**注意：** 不能直接 `CString` 创建，也不能直接从 API 返回值中获取字符串。必须通过 `DboTclHelper_sMakeCString` 和 `DboTclHelper_sGetConstCharPtr`。
+**Note:** You cannot create a CString with `CString` directly, nor can you extract a string directly from an API return value. You must use `DboTclHelper_sMakeCString` and `DboTclHelper_sGetConstCharPtr`.
 
 ---
 
-## SWIG 返回值处理（catch + lindex 模式）
+## SWIG Return Value Handling (catch + lindex Pattern)
 
-Cadence SWIG 绑定中，许多方法返回多个值（包含 DboState 状态码），直接赋值会导致 `invalid command name "0"` 错误。
+In Cadence SWIG bindings, many methods return multiple values (including a DboState status code). Direct assignment causes an `invalid command name "0"` error.
 
-**必须使用 catch + lindex 模式：**
+**Always use the catch + lindex pattern:**
 
 ```tcl
-; 错误 — 导致 invalid command name "0"
+; WRONG — causes "invalid command name "0""
 set lPart [$lPIter NextPartInst $lStatus]
 
-; 正确 — catch + lindex 取第一个返回值
+; CORRECT — catch + lindex to get the first return value
 set res [list]
 catch { set res [$lPIter NextPartInst $lStatus] }
 set lPart [lindex $res 0]
 ```
 
-**适用范围：** `GetRootSchematic`、`NextPage`、`NextPartInst`、`NextPin`、`NextDevice`、`GetContents`、`GetNet`、`GetWire`、`NewPagesIter`、`NewPartInstsIter`、`NewPinsIter`、`NewDevicesIter` 等几乎所有 SWIG 绑定方法。
+**Applies to:** `GetRootSchematic`, `NextPage`, `NextPartInst`, `NextPin`, `NextDevice`, `GetContents`, `GetNet`, `GetWire`, `NewPagesIter`, `NewPartInstsIter`, `NewPinsIter`, `NewDevicesIter`, and virtually all SWIG-bound methods.
 
-**特殊情况：** 某些方法如 `GetPinName`、`GetPinNumber` 在 catch 后 CString 仍被正确填充（即使 catch 捕获到 DboState 对象）。
+**Special case:** Some methods like `GetPinName`, `GetPinNumber` still correctly fill the CString even after catch captures a DboState object.
 
 ---
 
-## 对象层次结构
+## Object Hierarchy
 
-### Design 模式
+### Design Mode
 
 ```
 DboDesign
@@ -85,26 +85,26 @@ DboDesign
         └── DboPage
               ├── DboTitleBlock
               └── DboPartInst
-                    ├── 普通器件 → 提取 Pin-Net
-                    └── Hierarchy Block → DboView → DboSchematic (递归)
+                    ├── Normal component → extract Pin-Net data
+                    └── Hierarchy Block → DboView → DboSchematic (recurse)
 ```
 
-### Library 模式
+### Library Mode
 
 ```
 DboLib
   └── DboLibPart
-        ├── DboSymbolPin (Normal / Convert 视图)
+        ├── DboSymbolPin (Normal / Convert view)
         └── DboPackage
               └── DboDevice
-                    └── SemanticString (包含 PinNumber 映射)
+                    └── SemanticString (contains PinNumber mapping)
 ```
 
 ---
 
-## Design 模式 API
+## Design Mode API
 
-### 获取 Root Schematic
+### Get Root Schematic
 
 ```tcl
 set rootRes [list]
@@ -112,7 +112,7 @@ catch { set rootRes [$lDesign GetRootSchematic $lStatus] }
 set lRootSch [lindex $rootRes 0]
 ```
 
-### 遍历 Page（本地顺序）
+### Iterate Pages (Local Order)
 
 ```tcl
 set pageIterRes [list]
@@ -124,14 +124,14 @@ while {$idx < 500} {
     catch { set pgRes [$lPageIter NextPage $lStatus] }
     set lPage [lindex $pgRes 0]
     if {$lPage == "" || $lPage == "NULL"} { break }
-    ; 处理 lPage...
+    ; process lPage...
     incr idx
 }
 ```
 
-**注意：** `NewPagesIter` 返回顺序是数据库内部顺序，不是标题栏页号顺序。
+**Note:** `NewPagesIter` returns pages in internal database order, not title block page number order.
 
-### 遍历 Page（全局 TitleBlock 顺序）
+### Iterate Pages (Global Title Block Order)
 
 ```tcl
 set pageList [DboRefDesUtils_GetPagesAsPerPagesInTitleBlockOrder $lDesign]
@@ -142,16 +142,16 @@ while {[$lIter hasNext]} {
     set item  [$lIter next]
     set lPage [DboPageStructOcc_getPage $item]
     incr globalIdx
-    ; globalIdx 即为全局页码
+    ; globalIdx is the global page number
 }
 ```
 
-**关键点：**
-- 参数仅需 `$lDesign`，不需要 `$lStatus`
-- 返回的迭代器使用 `hasNext`/`next` 模式（非 Capture 常见的 `Next` 模式）
-- 自动处理层次化设计，子模块页面穿插在父页面对应位置
+**Key points:**
+- Only needs `$lDesign` as parameter — no `$lStatus` required
+- The returned iterator uses `hasNext`/`next` pattern (not the common Capture `Next` pattern)
+- Automatically handles hierarchical designs; child module pages are interleaved at the correct position
 
-### 遍历 PartInst
+### Iterate PartInst
 
 ```tcl
 set piRes [list]
@@ -163,12 +163,12 @@ while {$pc < 2000} {
     catch { set pRes [$lPIter NextPartInst $lStatus] }
     set lPI [lindex $pRes 0]
     if {$lPI == "" || $lPI == "NULL"} { break }
-    ; 处理 lPI...
+    ; process lPI...
     incr pc
 }
 ```
 
-### 获取器件位号和值
+### Get Component Refdes and Value
 
 ```tcl
 set refCS [DboTclHelper_sMakeCString]
@@ -180,7 +180,7 @@ catch { $lPI GetPartValue $valCS }
 set partValue [DboTclHelper_sGetConstCharPtr $valCS]
 ```
 
-### 判断 Hierarchy Block
+### Detect Hierarchy Block
 
 ```tcl
 set cntRes [list]
@@ -188,15 +188,15 @@ catch { set cntRes [$lPI GetContents $lStatus] }
 set lView [lindex $cntRes 0]
 
 if {$lView != "" && $lView != "NULL"} {
-    ; 是 Hierarchy Block
+    ; This is a Hierarchy Block
     set childSch [DboViewToDboSchematic $lView]
-    ; 递归处理 childSch
+    ; Recurse into childSch
 } else {
-    ; 是普通器件
+    ; This is a normal component
 }
 ```
 
-### 遍历 Pin
+### Iterate Pins
 
 ```tcl
 set pinsRes [list]
@@ -208,35 +208,35 @@ while {$pinIdx < 1000} {
     catch { set pinRes [$pinsIter NextPin $lStatus] }
     set lPin [lindex $pinRes 0]
     if {$lPin == "" || $lPin == "NULL"} { break }
-    ; 处理 lPin...
+    ; process lPin...
     incr pinIdx
 }
 ```
 
-**注意：** 必须用 `NewPinsIter`，不是 `NewPinInstsIter`。后者在 Design 模式下返回 NULL。
+**Note:** Must use `NewPinsIter`, not `NewPinInstsIter`. The latter returns NULL in Design mode.
 
-### 获取 Pin 属性
+### Get Pin Attributes
 
 ```tcl
-; 引脚功能名
+; Pin function name
 set pnCS [DboTclHelper_sMakeCString]
 catch { $lPin GetPinName $pnCS }
 set pinName [DboTclHelper_sGetConstCharPtr $pnCS]
 
-; 引脚编号
+; Pin number
 set pnumCS [DboTclHelper_sMakeCString]
 catch { $lPin GetPinNumber $pnumCS }
 set pinNumber [DboTclHelper_sGetConstCharPtr $pnumCS]
 
-; 引脚类型（整数枚举）
+; Pin type (integer enum)
 catch { set pinTypeNum [$lPin GetPinType $lStatus] }
 ```
 
-Pin 对象类型为 `DboPortInst`（非 `DboSymbolPin`，后者仅 Library 模式可用）。
+Pin object type is `DboPortInst` (not `DboSymbolPin`, which is only available in Library mode).
 
-### 获取 NetName（最关键）
+### Get NetName (Most Critical)
 
-**主路径：通过 DboNet**
+**Primary path: via DboNet**
 
 ```tcl
 set netRes [list]
@@ -250,7 +250,7 @@ if {$lNet != "" && $lNet != "NULL"} {
 }
 ```
 
-**备用路径：通过 DboWire**
+**Fallback path: via DboWire**
 
 ```tcl
 if {$netName == ""} {
@@ -266,47 +266,47 @@ if {$netName == ""} {
 }
 ```
 
-**关键：** 必须用 `GetNetName`，不能用 `GetName`。`GetName` 在 DboNet 上返回空字符串。
+**Critical:** Use `GetNetName`, not `GetName`. `GetName` on DboNet returns an empty string.
 
-### TitleBlock 操作
+### TitleBlock Operations
 
 ```tcl
 set lTBIter [$lPage NewTitleBlocksIter $lStatus]
 set lTB [$lTBIter NextTitleBlock $lStatus]
 
 if {$lTB != "NULL"} {
-    ; 必须传 $lStatus，否则返回 0
+    ; Must pass $lStatus — otherwise returns 0
     set pageNum [$lTB GetPageNumber $lStatus]
     set pageCnt [$lTB GetPageCount $lStatus]
 
-    ; 模块名
+    ; Module name
     set schCStr [DboTclHelper_sMakeCString]
     catch { $lTB GetSchematicName $schCStr }
     set moduleName [DboTclHelper_sGetConstCharPtr $schCStr]
 
-    ; 属性读取
+    ; Property read
     set propNameCStr [DboTclHelper_sMakeCString]
     set valCStr [DboTclHelper_sMakeCString]
     DboTclHelper_sSetCString $propNameCStr "Page Count"
     $lTB GetEffectivePropStringValue $propNameCStr $valCStr
-    ; 注意："Page Count" 返回全局总页数，非本地页数
+    ; Note: "Page Count" returns global total pages, not local count
 }
 ```
 
-### EffectiveProp 属性名
+### EffectiveProp Property Names
 
-| 属性名 | 返回值 | 说明 |
+| Property Name | Return Value | Note |
 |---|---|---|
-| `Page Number` | 本地页码 | 同 `GetPageNumber` |
-| `Page Count` | 全局总页数 | 非 `GetPageCount` 的本地值 |
-| `PageNumber` | 空 | 大小写敏感 |
-| `page_number` | 空 | 大小写敏感 |
+| `Page Number` | Local page number | Same as `GetPageNumber` |
+| `Page Count` | Global total page count | Not the local value from `GetPageCount` |
+| `PageNumber` | Empty | Case-sensitive |
+| `page_number` | Empty | Case-sensitive |
 
 ---
 
-## Library 模式 API
+## Library Mode API
 
-### 遍历 Part
+### Iterate Parts
 
 ```tcl
 set lPartIter [DboLib_NewPartsIter $theLib $lStatus]
@@ -318,17 +318,17 @@ while {1} {
 }
 ```
 
-### 获取 Part 属性
+### Get Part Attributes
 
 ```tcl
-$lPart GetReference $cstr            ; 参考位号前缀 (U, R, C...)
+$lPart GetReference $cstr            ; Reference prefix (U, R, C...)
 $lPart GetPartValue $cstr            ; Part Value
-$lPart GetName $cstr                 ; 完整名 (GTL2003PW.Normal)
-$lPart GetContentsViewType $lStatus  ; 视图类型 (0=Normal, 1=Convert)
-$lPart GetPackagePtr                 ; 获取 Package 对象
+$lPart GetName $cstr                 ; Full name (e.g., GTL2003PW.Normal)
+$lPart GetContentsViewType $lStatus  ; View type (0=Normal, 1=Convert)
+$lPart GetPackagePtr                 ; Get Package object
 ```
 
-### 遍历 Library Pin
+### Iterate Library Pins
 
 ```tcl
 set lPinIter [$lPart NewLPinsIter $lStatus]
@@ -340,15 +340,15 @@ while {1} {
 }
 ```
 
-### Library Pin 属性
+### Library Pin Attributes
 
 ```tcl
-$lPin GetPinName $cstr          ; 引脚名称
-$lPin GetPinType $lStatus       ; 引脚类型（整数枚举）
-$lPin GetSemanticString $cstr   ; 完整语义字符串
+$lPin GetPinName $cstr          ; Pin name
+$lPin GetPinType $lStatus       ; Pin type (integer enum)
+$lPin GetSemanticString $cstr   ; Full semantic string
 ```
 
-### 获取 PinNumber（通过 Package → Device）
+### Get PinNumber (via Package → Device)
 
 ```tcl
 set pkg [$lPart GetPackagePtr]
@@ -366,31 +366,31 @@ while {1} {
     set devSSCS [DboTclHelper_sMakeCString]
     catch { $dev GetSemanticString $devSSCS }
     set devSS [DboTclHelper_sGetConstCharPtr $devSSCS]
-    ; 从 devSS 中正则提取 PinNumber(index) = value
+    ; Extract PinNumber(index) = value from devSS via regex
 }
 ```
 
-### SemanticString 解析
+### SemanticString Parsing
 
-`GetSemanticString` 返回的文本包含完整属性，可正则提取：
+`GetSemanticString` returns text containing complete attributes that can be parsed with regex:
 
 ```tcl
-; Pin 属性
+; Pin attributes
 regexp {PinType = (\w+)} $semStr match pinType
 regexp {PinPosition = (\d+)} $semStr match pinPosition
 
-; Device 中的引脚编号映射
+; Pin number mapping in Device
 regexp {PinNumber\((\d+)\) = (\w+)} $devSS match idx val
 ```
 
 ---
 
-## 枚举值映射
+## Enum Value Mappings
 
 ### PinType
 
-| 枚举值 | 含义 |
-|---|---|
+| Enum | Meaning |
+|------|---------|
 | 0 | Open |
 | 1 | Bidirectional |
 | 2 | Output3State |
@@ -406,29 +406,29 @@ regexp {PinNumber\((\d+)\) = (\w+)} $devSS match idx val
 
 ---
 
-## 不可用的 API（OrCAD 17.2）
+## Unsupported APIs (OrCAD 17.2)
 
-以下写入操作在 OrCAD 17.2 中均静默失败：
+The following write operations all fail silently in OrCAD 17.2:
 
-| API | 行为 |
+| API | Behavior |
 |---|---|
-| `DboNet_SetName` | 静默失败 |
-| `DboSchematicNet_SetName` | 静默失败 |
-| `DboWireScalar_SetName` | 静默失败 |
-| `DboAlias_SetName` | Alias 对象不可获取 |
-| `SetEffectivePropStringValue("Name", ...)` | 无效 |
+| `DboNet_SetName` | Fails silently |
+| `DboSchematicNet_SetName` | Fails silently |
+| `DboWireScalar_SetName` | Fails silently |
+| `DboAlias_SetName` | Alias object not accessible |
+| `SetEffectivePropStringValue("Name", ...)` | No effect |
 
-以下路径返回 NULL（不支持 Occurrence）：
+The following paths return NULL (Occurrence not supported):
 
-| API | 返回 |
+| API | Returns |
 |---|---|
 | `$lDesign GetFlatSchematic $lStatus` | NULL |
 | `$lDesign GetRootSchematicOccurrence $lStatus` | NULL |
 | `$childSch GetOccurrence $lStatus` | NULL |
 
-Page 上的 Net 迭代器全部返回 NULL，Net 必须通过 Pin → GetNet 获取：
+All Net iterators on Page return NULL — nets must be obtained via Pin → GetNet:
 
-| API | 返回 |
+| API | Returns |
 |---|---|
 | `$page NewNetsIter $lStatus` | NULL |
 | `$page NewNetInstsIter $lStatus` | NULL |
