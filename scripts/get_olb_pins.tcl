@@ -1,18 +1,12 @@
-set logFile "./scripts/output_get_olb_pins.txt"
-set fp [open $logFile "w"]
-
 proc log {msg} {
     upvar fp fp
     puts $fp $msg
     puts $msg
 }
 
-catch {
+set fp stdout
 
-log "=========================================="
-log "  OLB PIN INFO EXPORT"
-log "=========================================="
-log ""
+catch {
 
 set lStatus [DboState]
 
@@ -20,6 +14,15 @@ set theLib [GetActivePMLastLibrary]
 set libNameCS [DboTclHelper_sMakeCString]
 DboLib_GetName $theLib $libNameCS
 set libName [DboTclHelper_sGetConstCharPtr $libNameCS]
+set libShortName [file tail [file rootname $libName]]
+
+set logFile "./scripts/${libShortName}_output.txt"
+set fp [open $logFile "w"]
+
+log "=========================================="
+log "  OLB PIN INFO EXPORT"
+log "=========================================="
+log ""
 log "Lib: $libName"
 log ""
 
@@ -40,10 +43,9 @@ set lPartIter [DboLib_NewPartsIter $theLib $lStatus]
 set allRows {}
 set partCount 0
 set totalPinCount 0
+set partIdx 0
 
 set lastPkgName ""
-set sectionIdx 0
-set partIdx 0
 
 while {$partIdx < 5000} {
     set partRes [list]
@@ -79,11 +81,54 @@ while {$partIdx < 5000} {
     }
 
     if {$pkgName != $lastPkgName} {
-        set sectionIdx 1
         set lastPkgName $pkgName
-    } else {
-        incr sectionIdx
+        array unset pkgDevSS
+        array unset pkgDevCell
+        set pkgDevTotal 0
+        if {$pkg != "" && $pkg != "NULL"} {
+            set devIterRes [list]
+            catch { set devIterRes [$pkg NewDevicesIter $lStatus] }
+            set devIter [lindex $devIterRes 0]
+            if {$devIter != "" && $devIter != "NULL"} {
+                set di 1
+                while {1} {
+                    set devRes [list]
+                    catch { set devRes [$devIter NextDevice $lStatus] }
+                    set dev [lindex $devRes 0]
+                    if {$dev == "" || $dev == "NULL"} { break }
+                    set devSSCS [DboTclHelper_sMakeCString]
+                    catch { $dev GetSemanticString $devSSCS }
+                    set pkgDevSS($di) [DboTclHelper_sGetConstCharPtr $devSSCS]
+                    set cName ""
+                    regexp {Cell = ([^\r\n]+)} $pkgDevSS($di) -> cName
+                    set pkgDevCell($di) $cName
+                    log "  Cached Device $di Cell='$cName'"
+                    incr di
+                }
+                set pkgDevTotal [expr {$di - 1}]
+            }
+        }
     }
+
+    set nameNoView [lindex [split $partFullName "."] 0]
+    set deviceNum -1
+    for {set di 1} {$di <= $pkgDevTotal} {incr di} {
+        if {[info exists pkgDevCell($di)] && $pkgDevCell($di) eq $nameNoView} {
+            set deviceNum $di
+            break
+        }
+    }
+
+    if {$deviceNum == -1} {
+        log "  WARNING: No Cell match for '$nameNoView'"
+        set deviceNum 0
+    }
+
+    log "----------------------------------------"
+    log "Part: $partValue  Ref: $partRef  View: $viewType  Section: $deviceNum"
+    log "  FullName: $partFullName"
+    log "  Package: $pkgName  Matched Device: $deviceNum"
+    log "----------------------------------------"
 
     if {$partValue == ""} {
         set partValue $pkgName
@@ -91,30 +136,9 @@ while {$partIdx < 5000} {
 
     incr partCount
 
-    log "----------------------------------------"
-    log "Part: $partValue  Ref: $partRef  View: $viewType  Section: $sectionIdx"
-    log "  FullName: $partFullName"
-    log "  Package: $pkgName"
-    log "----------------------------------------"
-
     set devSS ""
-    if {$pkg != "" && $pkg != "NULL"} {
-        set devIterRes [list]
-        catch { set devIterRes [$pkg NewDevicesIter $lStatus] }
-        set devIter [lindex $devIterRes 0]
-        if {$devIter != "" && $devIter != "NULL"} {
-            set allDevSS ""
-            while {1} {
-                set devRes [list]
-                catch { set devRes [$devIter NextDevice $lStatus] }
-                set dev [lindex $devRes 0]
-                if {$dev == "" || $dev == "NULL"} { break }
-                set devSSCS [DboTclHelper_sMakeCString]
-                catch { $dev GetSemanticString $devSSCS }
-                append allDevSS [DboTclHelper_sGetConstCharPtr $devSSCS] "\n"
-            }
-            set devSS $allDevSS
-        }
+    if {$deviceNum > 0 && [info exists pkgDevSS($deviceNum)]} {
+        set devSS $pkgDevSS($deviceNum)
     }
 
     array unset pinNumMap
@@ -175,7 +199,8 @@ while {$partIdx < 5000} {
         log [format "  Pin%02d: Name=%-25s  Number=%-8s  Position=%-4s  Type(Enum)=%-15s Type(Sem)=%s" \
             $pinIdx $pinName $pinNum $semPinPos $pinTypeStr $semPinType]
 
-        lappend allRows [list $partValue $partRef $sectionIdx $viewType $pinIdx $pinName $pinNum $semPinPos $pinTypeStr $semPinType $pkgName]
+        set sortKey "${pkgName}|[format {%05d} $deviceNum]|[format {%05d} $pinIdx]"
+        lappend allRows [list $sortKey $partValue $partRef $deviceNum $viewType $pinIdx $pinName $pinNum $semPinPos $pinTypeStr $semPinType $pkgName]
 
         incr pinIdx
         incr totalPinCount
@@ -193,21 +218,24 @@ log "  Total Parts (Sections): $partCount"
 log "  Total Pins: $totalPinCount"
 log "=========================================="
 
+set allRows [lsort -index 0 $allRows]
+
 log ""
-log "=== Writing CSV 1 (data only) ==="
-set csvFile "./olb_pin_info.csv"
+log "=== Writing CSV 1 (data only, sorted by Section) ==="
+set csvFile "./${libShortName}_pin_info.csv"
 set cfp [open $csvFile "w"]
 puts $cfp "PartName,PartRef,Section,View,PinIndex,PinName,PinNumber,PinPosition,PinType(Enum),PinType(Semantic),Package"
 
 foreach row $allRows {
-    puts $cfp [join $row ","]
+    set data [lrange $row 1 end]
+    puts $cfp [join $data ","]
 }
 close $cfp
 log "CSV saved to: $csvFile"
 
 log ""
-log "=== Writing CSV 2 (with section headers & summary) ==="
-set csvFile2 "./olb_pin_info_detail.csv"
+log "=== Writing CSV 2 (with section headers & summary, sorted by Section) ==="
+set csvFile2 "./${libShortName}_pin_info_detail.csv"
 set cfp2 [open $csvFile2 "w"]
 
 puts $cfp2 "Lib: $libName"
@@ -216,13 +244,14 @@ puts $cfp2 "PartName,PartRef,Section,View,PinIndex,PinName,PinNumber,PinPosition
 
 set lastPartKey ""
 foreach row $allRows {
-    set pKey "[lindex $row 0]|[lindex $row 1]|[lindex $row 2]|[lindex $row 3]|[lindex $row 9]"
+    set data [lrange $row 1 end]
+    set pKey "[lindex $data 0]|[lindex $data 1]|[lindex $data 2]|[lindex $data 3]|[lindex $data 10]"
     if {$pKey != $lastPartKey} {
         puts $cfp2 ""
-        puts $cfp2 "# Part: [lindex $row 0]  Ref: [lindex $row 1]  Section: [lindex $row 2]  View: [lindex $row 3]  Package: [lindex $row 9]"
+        puts $cfp2 "# Part: [lindex $data 0]  Ref: [lindex $data 1]  Section: [lindex $data 2]  View: [lindex $data 3]  Package: [lindex $data 10]"
         set lastPartKey $pKey
     }
-    puts $cfp2 [join $row ","]
+    puts $cfp2 [join $data ","]
 }
 
 puts $cfp2 ""
@@ -237,8 +266,12 @@ log "CSV saved to: $csvFile2"
 } bigErr
 
 if {$bigErr != ""} {
-    log "OUTER ERROR: $bigErr"
+    if {$fp != "stdout"} {
+        log "OUTER ERROR: $bigErr"
+    }
+    puts "OUTER ERROR: $bigErr"
 }
 
-close $fp
-# design by shandouzi
+if {$fp != "stdout"} {
+    close $fp
+}

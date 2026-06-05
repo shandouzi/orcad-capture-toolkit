@@ -177,7 +177,7 @@ $dev GetSemanticString $cstr
 ; Extract PinNumber(index) = value from the returned text via regex
 ```
 
-**Note:** Multi-section components require iterating all Devices and merging PinNumber mappings.
+**Note:** For multi-section components, Parts are iterated in OLB storage order (arbitrary), while Devices are iterated in Package definition order (logical). You must match Part to Device by Cell name (from `GetSemanticString`) — NOT by sequential index. The Device iteration order is the correct section order.
 
 ---
 
@@ -291,16 +291,43 @@ function netSortKey(net) {
 
 ---
 
-## Pitfall 17: `DboRefDesUtils_GetPagesAsPerPagesInTitleBlockOrder` Parameters
+## Pitfall 17: Part Iterator Order ≠ Device Iterator Order
 
-**Symptom:** Wrong parameters cause errors.
+**Symptom:** Multi-section component PinNumbers are wrong or repeated across sections.
+
+**Root cause:** `DboLib_NewPartsIter` iterates Parts in OLB internal storage order (arbitrary, e.g., 6, 13, 37, 9...). `$pkg NewDevicesIter` iterates Devices in Package definition order (logical 1, 2, 3...). These orders do NOT match.
+
+**Solution:** Match each Part to its Device by Cell name:
 
 ```tcl
-; WRONG
-DboRefDesUtils_GetPagesAsPerPagesInTitleBlockOrder $lRoot $lStatus   ; error
-DboRefDesUtils_GetPagesAsPerPagesInTitleBlockOrder $lDesign $lStatus ; error
-DboRefDesUtils_GetPagesAsPerPagesInTitleBlockOrder $lRoot            ; error
+; Each Device SemanticString contains: Cell = <CellName>
+; Each Part FullName format: <CellName>.<ViewType>
+; Match by comparing these strings
 
-; CORRECT — only $lDesign, single parameter
-DboRefDesUtils_GetPagesAsPerPagesInTitleBlockOrder $lDesign          ; success
+regexp {Cell = ([^\r\n]+)} $devSS -> cellName
+set nameNoView [lindex [split $partFullName "."] 0]
+if {$cellName eq $nameNoView} { ; match! }
+```
+
+Use the Device index (iteration order) as the section number for correct ordering.
+
+---
+
+## Pitfall 18: `DboLib_GetName` Returns Full Path
+
+**Symptom:** File open fails with path like `./scripts/E:\...\MyLib.OLB_output.txt`.
+
+**Root cause:** `DboLib_GetName` returns the full file path, not just the library name.
+
+```tcl
+DboLib_GetName $theLib $libNameCS
+set libName [DboTclHelper_sGetConstCharPtr $libNameCS]
+; => "E:\...\MyLib.OLB"  (full path, not "MyLib")
+```
+
+**Solution:** Extract base filename:
+
+```tcl
+set libShortName [file tail [file rootname $libName]]
+; => "MyLib"
 ```

@@ -139,8 +139,8 @@ Extracts complete pin information for all components from an open OLB library.
 **Prerequisite:** OLB file open in Capture Library Editor
 
 **Output:**
-- `olb_pin_info.csv` — Raw data, easy to filter/sort in Excel
-- `olb_pin_info_detail.csv` — With section headers and summaries
+- `<libname>_pin_info.csv` — Raw data sorted by section, easy to filter/sort in Excel
+- `<libname>_pin_info_detail.csv` — With section headers and summaries
 
 **CSV Columns:**
 
@@ -160,8 +160,10 @@ Extracts complete pin information for all components from an open OLB library.
 
 **Key Features:**
 - Extracts PinType from both enum value and semantic string (they may differ)
-- Supports multi-section components (gate devices)
-- Iterates all components in the library
+- Supports multi-section components with correct Device-to-Part matching via Cell name
+- Section numbers follow Package Device order (not arbitrary OLB storage order)
+- Output files are named after the OLB filename automatically
+- CSV output sorted by Package → Section → Pin index
 
 ---
 
